@@ -468,7 +468,61 @@ static void Cipher(state_t* state, uint8_t* RoundKey)
   {
     SubBytes(state);
     ShiftRows(state);
+    state_t mix_column_state;
+//    memcpy(&mix_column_state, state, sizeof(state_t));
+    // Run the hardware mix column
+    uint32_t *mix_columns_addr = (uint32_t *)XPAR_MIX_COLUMNS_0_S00_AXI_BASEADDR;
+//    *(mix_columns_addr+0) = *state[0][0] << 24 | *state[0][1] << 16 | *state[0][2] << 8 | *state[0][3];
+//    *(mix_columns_addr+1) = *state[1][0] << 24 | *state[1][1] << 16 | *state[1][2] << 8 | *state[1][3];
+//    *(mix_columns_addr+2) = *state[2][0] << 24 | *state[2][1] << 16 | *state[2][2] << 8 | *state[2][3];
+//    *(mix_columns_addr+3) = *state[3][0] << 24 | *state[3][1] << 16 | *state[3][2] << 8 | *state[3][3];
+//
+//    // And read both input and output
+//    k = 4;
+//	for (i = 0; i < 4; i++) {
+//		j = 0;
+//		mix_column_state[i][j++] = (*(mix_columns_addr+k) >> 24) & 0xFF;
+//		mix_column_state[i][j++] = (*(mix_columns_addr+k) >> 16) & 0xFF;
+//		mix_column_state[i][j++] = (*(mix_columns_addr+k) >> 8) & 0xFF;
+//		mix_column_state[i][j] = *(mix_columns_addr+k) & 0xFF;
+//		k++;
+//	}
+
+	state_0 = (*state)[0][0] << 24 | (*state)[0][1] << 16 | (*state)[0][2] << 8 | (*state)[0][3];
+	*(mix_columns_addr+0) = state_0;
+	state_1 = (*state)[1][0] << 24 | (*state)[1][1] << 16 | (*state)[1][2] << 8 | (*state)[1][3];
+	*(mix_columns_addr+1) = state_1;
+	state_2 = (*state)[2][0] << 24 | (*state)[2][1] << 16 | (*state)[2][2] << 8 | (*state)[2][3];
+	*(mix_columns_addr+2) = state_2;
+	state_3 = (*state)[3][0] << 24 | (*state)[3][1] << 16 | (*state)[3][2] << 8 | (*state)[3][3];
+	*(mix_columns_addr+3) = state_3;
+
+	k = 4;
+	for (i = 0; i < 4; i++) {
+		j = 0;
+		(*state_block)[i][j++] = (*(mix_columns_addr+k) >> 24) & 0xFF;
+		(*state_block)[i][j++] = (*(mix_columns_addr+k) >> 16) & 0xFF;
+		(*state_block)[i][j++] = (*(mix_columns_addr+k) >> 8) & 0xFF;
+		(*state_block)[i][j] = *(mix_columns_addr+k) & 0xFF;
+		k++;
+	}
+	pstate(Nr, "Loop: mixColumn (HW)", state_block);
+    // Then the software mix_column
+//	pstate(round, "Loop: MixColumn Input (SW)", state);
     MixColumns(state);
+    pstate(round, "Loop: MixColumn (SW)", state);
+//    pstate(round, "Loop: MixColumn(HW)", &mix_column_state);
+
+//    k = 0;
+//	for (i = 0; i < 4; i++) {
+//		j = 0;
+//		mix_column_state[i][j++] = (*(mix_columns_addr+k) >> 24) & 0xFF;
+//		mix_column_state[i][j++] = (*(mix_columns_addr+k) >> 16) & 0xFF;
+//		mix_column_state[i][j++] = (*(mix_columns_addr+k) >> 8) & 0xFF;
+//		mix_column_state[i][j] = *(mix_columns_addr+k) & 0xFF;
+//		k++;
+//	}
+//	pstate(round, "Loop: MixColumn Input(HW)", &mix_column_state);
 
 #ifdef MILESTONE2
 	state_0 = (*state)[0][0] << 24 | (*state)[0][1] << 16 | (*state)[0][2] << 8 | (*state)[0][3];
@@ -640,7 +694,11 @@ static void Cipher(state_t* state, uint8_t* RoundKey)
 
 static void InvCipher(state_t* state,uint8_t* RoundKey)
 {
-  uint8_t round = 0;
+	state_t* state_block = (state_t*) malloc(sizeof(state_t));
+	uint32_t state_0, state_1, state_2, state_3;
+    uint8_t round = 0;
+
+    uint32_t *mixColInv_p = (uint32_t *)XPAR_MIX_COLUMNS_0_S00_AXI_BASEADDR;
 
   // Add the First round key to the state before starting the rounds.
   AddRoundKey(Nr, state, RoundKey);
@@ -653,7 +711,35 @@ static void InvCipher(state_t* state,uint8_t* RoundKey)
     InvShiftRows(state);
     InvSubBytes(state);
     AddRoundKey(round, state, RoundKey);
-    InvMixColumns(state);
+
+    state_0 = (*state)[0][0] << 24 | (*state)[0][1] << 16 | (*state)[0][2] << 8 | (*state)[0][3];
+	*(mixColInv_p+0) = state_0;
+	state_1 = (*state)[1][0] << 24 | (*state)[1][1] << 16 | (*state)[1][2] << 8 | (*state)[1][3];
+	*(mixColInv_p+1) = state_1;
+	state_2 = (*state)[2][0] << 24 | (*state)[2][1] << 16 | (*state)[2][2] << 8 | (*state)[2][3];
+	*(mixColInv_p+2) = state_2;
+	state_3 = (*state)[3][0] << 24 | (*state)[3][1] << 16 | (*state)[3][2] << 8 | (*state)[3][3];
+	*(mixColInv_p+3) = state_3;
+
+	// Switch to decrypt mode
+	*(mixColInv_p+8) = 0xFF;
+
+	int k = 4;
+	int j = 0;
+	for (int i = 0; i < 4; i++) {
+		j = 0;
+		(*state_block)[i][j++] = (*(mixColInv_p+k) >> 24) & 0xFF;
+		(*state_block)[i][j++] = (*(mixColInv_p+k) >> 16) & 0xFF;
+		(*state_block)[i][j++] = (*(mixColInv_p+k) >> 8) & 0xFF;
+		(*state_block)[i][j] = *(mixColInv_p+k) & 0xFF;
+		k++;
+	}
+
+	pstate(round, "Last: InvMixColumns (HW)", state_block);
+
+    InvMixColumns(state);  // This is where we're gonna add our hardware and compare
+
+    pstate(Nr, "Last: InvMixColumns (SW)", state);
   }
 
   // The last round is given below.

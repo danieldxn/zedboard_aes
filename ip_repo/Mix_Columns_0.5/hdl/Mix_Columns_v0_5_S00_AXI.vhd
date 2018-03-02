@@ -129,11 +129,13 @@ architecture arch_imp of Mix_Columns_v0_5_S00_AXI is
 	
 	component mixColumns
 		port (inState  : in  STATE;
+		      mode     : in AES_MODE;
 			  outState : out STATE);
     end component mixColumns;
 	
 	signal slv_reg_state : STATE;
 	signal output_state  : STATE;
+	signal mode_select   : AES_MODE;
 	
 	-- User component ends
 
@@ -335,7 +337,7 @@ begin
 	            slv_reg5 <= slv_reg5;
 	            slv_reg6 <= slv_reg6;
 	            slv_reg7 <= slv_reg7;
-	            slv_reg8 <= slv_reg8;
+	            slv_reg8 <= slv_reg8; -- Mode switch
 	            slv_reg9 <= slv_reg9;
 	        end case;
 	      end if;
@@ -439,15 +441,15 @@ begin
 	      when b"0011" =>
 	        reg_data_out <= slv_reg3;
 	      when b"0100" =>
-	        reg_data_out <= slv_reg4;
+	        reg_data_out <= output_state(0)(0) & output_state(0)(1) & output_state(0)(2) & output_state(0)(3);
 	      when b"0101" =>
-	        reg_data_out <= slv_reg5;
+	        reg_data_out <= output_state(1)(0) & output_state(1)(1) & output_state(1)(2) & output_state(1)(3);
 	      when b"0110" =>
-	        reg_data_out <= slv_reg6;
+	        reg_data_out <= output_state(2)(0) & output_state(2)(1) & output_state(2)(2) & output_state(2)(3);
 	      when b"0111" =>
-	        reg_data_out <= slv_reg7;
+	        reg_data_out <= output_state(3)(0) & output_state(3)(1) & output_state(3)(2) & output_state(3)(3);
 	      when b"1000" =>
-	        reg_data_out <= slv_reg8;
+	        reg_data_out <= slv_reg8; -- Using this for encrypt/decrypt mode switch
 	      when b"1001" =>
 	        reg_data_out <= slv_reg9;
 	      when others =>
@@ -483,10 +485,22 @@ begin
         (slv_reg2(31 downto 24), slv_reg2(23 downto 16), slv_reg2(15 downto 8), slv_reg2(7 downto 0)),
         (slv_reg3(31 downto 24), slv_reg3(23 downto 16), slv_reg3(15 downto 8), slv_reg3(7 downto 0))
     );
-	
+
+    -- Mode switching
+    mode_select <= ENCRYPTION when (slv_reg8 = "00000000000000000000000000000000") else DECRYPTION;
+--    process (slv_reg8) is
+--    begin
+--        if (slv_reg8 = "00000000000000000000000000000000") then
+--            mode_select <= ENCRYPTION;
+--        else
+--            mode_select <= DECRYPTION;
+--        end if;
+--    end process;
+
 	mixColumnsP : mixColumns
     port map(
-        inState => slv_reg_state,
+        inState  => slv_reg_state,
+		mode     => mode_select,
         outState => output_state);
 
 	-- User logic ends
