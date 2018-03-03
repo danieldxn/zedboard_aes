@@ -699,6 +699,10 @@ static void InvCipher(state_t* state,uint8_t* RoundKey)
     uint8_t round = 0;
 
     uint32_t *mixColInv_p = (uint32_t *)XPAR_MIX_COLUMNS_0_S00_AXI_BASEADDR;
+    uint32_t *invShiftRows_p = (uint32_t *)XPAR_SHIFT_ROWS_0_S00_AXI_BASEADDR;
+    uint32_t *invSubBytes_p = (uint32_t *)XPAR_SUB_BYTES_0_S00_AXI_BASEADDR;
+
+    int j, k = 0;
 
   // Add the First round key to the state before starting the rounds.
   AddRoundKey(Nr, state, RoundKey);
@@ -708,8 +712,70 @@ static void InvCipher(state_t* state,uint8_t* RoundKey)
   // These Nr-1 rounds are executed in the loop below.
   for (round = (Nr - 1); round > 0; --round)
   {
+	// Write to Shift Rows hardware
+	state_0 = (*state)[0][0] << 24 | (*state)[0][1] << 16 | (*state)[0][2] << 8 | (*state)[0][3];
+	*(invShiftRows_p+0) = state_0;
+	state_1 = (*state)[1][0] << 24 | (*state)[1][1] << 16 | (*state)[1][2] << 8 | (*state)[1][3];
+	*(invShiftRows_p+1) = state_1;
+	state_2 = (*state)[2][0] << 24 | (*state)[2][1] << 16 | (*state)[2][2] << 8 | (*state)[2][3];
+	*(invShiftRows_p+2) = state_2;
+	state_3 = (*state)[3][0] << 24 | (*state)[3][1] << 16 | (*state)[3][2] << 8 | (*state)[3][3];
+	*(invShiftRows_p+3) = state_3;
+	// Switch to decrypt mode
+	*(invShiftRows_p+8) = 0xFF;
+
+	// Read invShiftRows
+	k = 4;
+	j = 0;
+	for (int i = 0; i < 4; i++) {
+		j = 0;
+		(*state_block)[i][j++] = (*(invShiftRows_p+k) >> 24) & 0xFF;
+		(*state_block)[i][j++] = (*(invShiftRows_p+k) >> 16) & 0xFF;
+		(*state_block)[i][j++] = (*(invShiftRows_p+k) >> 8) & 0xFF;
+		(*state_block)[i][j] = *(invShiftRows_p+k) & 0xFF;
+		k++;
+	}
+
+	pstate(round, "round: invShiftRows (HW)", state_block);
+
     InvShiftRows(state);
+
+    pstate(round, "round: invShiftRows (SW)", state);
+
+    // Now hardware for invShiftBytes
+
+    // Write to Sub Bytes hardware
+	state_0 = (*state)[0][0] << 24 | (*state)[0][1] << 16 | (*state)[0][2] << 8 | (*state)[0][3];
+	*(invSubBytes_p+0) = state_0;
+	state_1 = (*state)[1][0] << 24 | (*state)[1][1] << 16 | (*state)[1][2] << 8 | (*state)[1][3];
+	*(invSubBytes_p+1) = state_1;
+	state_2 = (*state)[2][0] << 24 | (*state)[2][1] << 16 | (*state)[2][2] << 8 | (*state)[2][3];
+	*(invSubBytes_p+2) = state_2;
+	state_3 = (*state)[3][0] << 24 | (*state)[3][1] << 16 | (*state)[3][2] << 8 | (*state)[3][3];
+	*(invSubBytes_p+3) = state_3;
+	// Switch to decrypt mode
+	*(invSubBytes_p+8) = 0xFF;
+
+	// Read invSubBytes
+	k = 4;
+	j = 0;
+	for (int i = 0; i < 4; i++) {
+		j = 0;
+		(*state_block)[i][j++] = (*(invSubBytes_p+k) >> 24) & 0xFF;
+		(*state_block)[i][j++] = (*(invSubBytes_p+k) >> 16) & 0xFF;
+		(*state_block)[i][j++] = (*(invSubBytes_p+k) >> 8) & 0xFF;
+		(*state_block)[i][j] = *(invSubBytes_p+k) & 0xFF;
+		k++;
+	}
+
+	pstate(round, "round: invSubBytes (HW)", state_block);
+
     InvSubBytes(state);
+
+    pstate(round, "round: invSubBytes (SW)", state);
+
+    // Now round key things
+
     AddRoundKey(round, state, RoundKey);
 
     state_0 = (*state)[0][0] << 24 | (*state)[0][1] << 16 | (*state)[0][2] << 8 | (*state)[0][3];
@@ -724,8 +790,8 @@ static void InvCipher(state_t* state,uint8_t* RoundKey)
 	// Switch to decrypt mode
 	*(mixColInv_p+8) = 0xFF;
 
-	int k = 4;
-	int j = 0;
+	k = 4;
+	j = 0;
 	for (int i = 0; i < 4; i++) {
 		j = 0;
 		(*state_block)[i][j++] = (*(mixColInv_p+k) >> 24) & 0xFF;
@@ -739,7 +805,7 @@ static void InvCipher(state_t* state,uint8_t* RoundKey)
 
     InvMixColumns(state);  // This is where we're gonna add our hardware and compare
 
-    pstate(Nr, "Last: InvMixColumns (SW)", state);
+    pstate(round, "Last: InvMixColumns (SW)", state);
   }
 
   // The last round is given below.
